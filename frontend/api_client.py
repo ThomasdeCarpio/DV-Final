@@ -42,3 +42,30 @@ def log_system_action(prompt: str, original_code: str, edited_code: str, status:
         })
     except:
         pass # Chấp nhận bỏ qua nếu lỗi log để không gián đoạn UI
+
+def get_general_chat(prompt: str):
+    """Gửi yêu cầu trò chuyện tư vấn tới AI."""
+    try:
+        response = requests.post(f"{BASE_URL}/api/ai/chat", json={"prompt": prompt})
+        if response.status_code == 200:
+            return response.json()["content"]
+        else:
+            return f"Lỗi từ AI: {response.text}"
+    except:
+        return "Lỗi kết nối tới Backend."
+    
+def modify_ai_code(current_code: str, prompt: str):
+    """Gửi code hiện tại và yêu cầu sửa đổi tới AI."""
+    try:
+        response = requests.post(
+            f"{BASE_URL}/api/ai/modify", 
+            json={"current_code": current_code, "prompt": prompt}
+        )
+        if response.status_code == 200:
+            return response.json()
+        else:
+            st.error(f"Lỗi khi sửa code: {response.text}")
+            return None
+    except:
+        st.error("Lỗi kết nối tới Backend.")
+        return None

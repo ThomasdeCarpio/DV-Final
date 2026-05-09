@@ -6,23 +6,23 @@ import json
 import os
 from datetime import datetime
 
-# Import custom modules
-from ai_service import generate_chart_code
+from ai_service import generate_chart_code, generate_chat_response
 from execution_engine import execute_and_capture_chart
 
 app = FastAPI(title="Real Estate Data Visualizer API")
 
-# Allow Streamlit (Frontend) to talk to FastAPI (Backend)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Allow all for local development
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --- PYDANTIC MODELS (Data Validation) ---
 class GenerateRequest(BaseModel):
+    prompt: str
+
+class ChatRequest(BaseModel):
     prompt: str
 
 class ExecuteRequest(BaseModel):
@@ -36,16 +36,33 @@ class LogRequest(BaseModel):
     status: str
     error_message: Optional[str] = None
 
-# --- API 1: AI GENERATOR ---
+class ModifyRequest(BaseModel):
+    current_code: str
+    prompt: str
+
 @app.post("/api/ai/generate")
 async def api_generate(request: GenerateRequest):
     try:
-        response = generate_chart_code(request.prompt)
-        return response # Returns dict with "explanation" and "code"
+        return generate_chart_code(request.prompt)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- API 2: EXECUTION ENGINE ---
+@app.post("/api/ai/modify")
+async def api_modify(request: ModifyRequest):
+    try:
+        from ai_service import modify_chart_code
+        return modify_chart_code(request.current_code, request.prompt)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/ai/chat")
+async def api_chat(request: ChatRequest):
+    try:
+        content = generate_chat_response(request.prompt)
+        return {"content": content}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/execute")
 async def api_execute(request: ExecuteRequest):
     result = execute_and_capture_chart(request.code, request.dataset_path)
@@ -53,32 +70,17 @@ async def api_execute(request: ExecuteRequest):
         raise HTTPException(status_code=400, detail=result["error"])
     return {"image_base64": result["image"]}
 
-# --- API 3: SYSTEM LOGGER ---
 @app.post("/api/logs")
 async def api_log(request: LogRequest):
-    log_entry = {
-        "timestamp": datetime.now().isoformat(),
-        "prompt": request.prompt,
-        "original_code": request.original_code,
-        "edited_code": request.edited_code,
-        "status": request.status,
-        "error_message": request.error_message
-    }
-    
+    log_entry = {"timestamp": datetime.now().isoformat(), **request.dict()}
     log_path = "../logs/system_logs.json"
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
-    
     logs = []
     if os.path.exists(log_path):
         with open(log_path, "r", encoding="utf-8") as f:
-            try:
-                logs = json.load(f)
-            except:
-                pass
-                
+            try: logs = json.load(f)
+            except: pass
     logs.append(log_entry)
-    
     with open(log_path, "w", encoding="utf-8") as f:
         json.dump(logs, f, ensure_ascii=False, indent=4)
-        
-    return {"message": "Log saved successfully"}
+    return {"status": "ok"}

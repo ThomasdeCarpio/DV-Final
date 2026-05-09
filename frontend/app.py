@@ -8,24 +8,27 @@ import api_client
 st.set_page_config(page_title="VN Real Estate Analytics", page_icon="🏢", layout="wide")
 
 # --- KHỞI TẠO SESSION STATE ---
+if "app_mode" not in st.session_state:
+    st.session_state.app_mode = "Tư vấn chung" # Mặc định ban đầu
 if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {"role": "assistant", "content": "Chào bạn! Tôi là trợ lý phân tích dữ liệu Bất động sản. Bạn muốn vẽ biểu đồ gì hôm nay?"}
-    ]
-if "is_pending" not in st.session_state:
-    st.session_state.is_pending = False
-if "current_code" not in st.session_state:
-    st.session_state.current_code = ""
-if "original_code" not in st.session_state:
-    st.session_state.original_code = ""
-if "current_explanation" not in st.session_state:
-    st.session_state.current_explanation = ""
-if "current_prompt" not in st.session_state:
-    st.session_state.current_prompt = ""
+    st.session_state.messages = [{"role": "assistant", "content": "Chào bạn! Tôi có thể tư vấn hoặc vẽ biểu đồ giúp bạn."}]
+if "is_pending" not in st.session_state: st.session_state.is_pending = False
+if "current_code" not in st.session_state: st.session_state.current_code = ""
+if "original_code" not in st.session_state: st.session_state.original_code = ""
+if "current_explanation" not in st.session_state: st.session_state.current_explanation = ""
+if "current_prompt" not in st.session_state: st.session_state.current_prompt = ""
 
 # --- GIAO DIỆN SIDEBAR ---
 with st.sidebar:
     st.title("⚙️ Bảng Điều Khiển")
+    
+    # Sử dụng 'key' để Streamlit tự động ghi nhớ lựa chọn vào session_state
+    st.radio(
+        "🚀 Chọn chế độ hoạt động:",
+        options=["Tư vấn chung", "Vẽ biểu đồ"],
+        key="app_mode", 
+        disabled=st.session_state.is_pending # Khóa khi đang đợi phê duyệt code
+    )
     st.markdown("---")
     st.subheader("📁 Dữ liệu hiện tại")
     st.success("Đã kết nối: `cleaned_vietnam_real_estates.csv`")
@@ -47,14 +50,12 @@ with st.sidebar:
     st.info("💡 **Hướng dẫn:** Nhập yêu cầu vào khung chat. AI sẽ tạo code. Bạn có thể chỉnh sửa màu sắc, tiêu đề trước khi nhấn Phê duyệt để vẽ biểu đồ.")
 
 # --- GIAO DIỆN CHÍNH (CHAT LỊCH SỬ) ---
-st.title("📊 Trực Quan Hóa Dữ Liệu Bất Động Sản AI")
+st.title(f"🏢 AI Real Estate Agent - {st.session_state.app_mode}")
 
-# Hiển thị lịch sử chat
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         if msg.get("type") == "image":
-            image_data = base64.b64decode(msg["content"])
-            st.image(image_data, use_container_width=True)
+            st.image(base64.b64decode(msg["content"]), use_container_width=True)
         else:
             st.markdown(msg["content"])
 
@@ -78,19 +79,16 @@ if st.session_state.is_pending:
                     result = api_client.execute_local_code(edited_code)
                     
                     if result["status"] == "success":
-                        # Lưu log thành công
                         api_client.log_system_action(
                             st.session_state.current_prompt,
                             st.session_state.original_code,
                             edited_code,
                             "Success"
                         )
-                        # Thêm ảnh vào lịch sử chat
                         st.session_state.messages.append({"role": "assistant", "type": "image", "content": result["image_base64"]})
                         st.session_state.is_pending = False
                         st.rerun()
                     else:
-                        # Lưu log thất bại
                         error_msg = result["error_message"]
                         api_client.log_system_action(
                             st.session_state.current_prompt,
@@ -100,7 +98,7 @@ if st.session_state.is_pending:
                             error_msg
                         )
                         st.error(f"Lỗi thực thi mã:\n```python\n{error_msg}\n```")
-                        st.session_state.current_code = edited_code # Giữ lại code đã sửa để người dùng thử lại
+                        st.session_state.current_code = edited_code
         
         with col2:
             if st.button("❌ Hủy bỏ"):
@@ -108,16 +106,12 @@ if st.session_state.is_pending:
                 st.rerun()
 
 # --- KHU VỰC TẢI XUỐNG PDF ---
-# Tìm biểu đồ gần nhất trong lịch sử để cho phép tải xuống
 for msg in reversed(st.session_state.messages):
     if msg.get("type") == "image":
         image_bytes = base64.b64decode(msg["content"])
-        
-        # Chuyển đổi PNG sang PDF trong bộ nhớ
         image = Image.open(BytesIO(image_bytes))
         pdf_buffer = BytesIO()
         image.convert('RGB').save(pdf_buffer, format='PDF')
-        
         st.download_button(
             label="📥 Tải biểu đồ gần nhất (PDF)",
             data=pdf_buffer.getvalue(),
@@ -126,26 +120,66 @@ for msg in reversed(st.session_state.messages):
         )
         break
 
-# --- KHUNG NHẬP YÊU CẦU CHAT ---
-# Khóa khung chat nếu đang có code chờ phê duyệt
-prompt = st.chat_input("VD: Vẽ biểu đồ cột so sánh giá nhà trung bình ở 3 vùng Bắc, Trung, Nam", disabled=st.session_state.is_pending)
+# --- CẤU HÌNH INPUT & LOGIC PHÂN NHÁNH ---
+st.markdown("---")
+
+# Khởi tạo mặc định để tránh NameError
+selected_fields, chart_type, color_scheme = [], "Tự động", "Tự động"
+
+# 1. Chỉ hiển thị Tùy chọn nâng cao nếu đang ở chế độ "Vẽ biểu đồ"
+if st.session_state.app_mode == "Vẽ biểu đồ":
+    pop_col, _ = st.columns([1, 4])
+    with pop_col:
+        with st.popover("➕ Tùy chọn nâng cao"):
+            st.markdown("### 🛠️ Cấu hình biểu đồ nhanh")
+            selected_fields = st.multiselect(
+                "Chọn trường dữ liệu:",
+                options=['price', 'area', 'price_per_m2', 'bedroom_count', 'bathroom_count', 'house_direction', 'region', 'property_type_name', 'province_name', 'year_month', 'total_rooms']
+            )
+            chart_type = st.selectbox("Loại biểu đồ:", options=['Tự động', 'Cột (Bar)', 'Đường (Line)', 'Phân tán (Scatter)', 'Tròn (Pie)'])
+            color_scheme = st.selectbox("Tông màu:", options=['Tự động', 'Vibrant', 'Pastel', 'High Contrast'])
+
+# 2. Khung nhập yêu cầu
+prompt = st.chat_input("Nhập yêu cầu hoặc hướng dẫn sửa code tại đây...")
 
 if prompt:
-    # 1. Hiển thị tin nhắn người dùng
     st.session_state.messages.append({"role": "user", "content": prompt})
-    st.session_state.current_prompt = prompt
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # 2. Gọi AI tạo code
     with st.chat_message("assistant"):
-        with st.spinner("Đang phân tích yêu cầu và viết code..."):
-            ai_response = api_client.generate_ai_code(prompt)
-            
-            if ai_response:
-                # Kích hoạt trạng thái chờ phê duyệt
-                st.session_state.is_pending = True
-                st.session_state.current_code = ai_response["code"]
-                st.session_state.original_code = ai_response["code"]
-                st.session_state.current_explanation = ai_response["explanation"]
-                st.rerun() # Tải lại giao diện để hiển thị khu vực phê duyệt
+        if st.session_state.app_mode == "Tư vấn chung":
+            with st.spinner("AI đang suy nghĩ..."):
+                answer = api_client.get_general_chat(prompt)
+                st.session_state.messages.append({"role": "assistant", "content": answer})
+                st.markdown(answer)
+        else:
+            # Trong khối NHÁNH 2 (V2 STEP 3)
+            if st.session_state.is_pending:
+                with st.spinner("AI đang chỉnh sửa mã nguồn..."):
+                    ai_response = api_client.modify_ai_code(st.session_state.current_code, prompt)
+                    if ai_response:
+                        # THÊM DÒNG NÀY: Để lưu lại phản hồi của AI vào lịch sử chat
+                        st.session_state.messages.append({"role": "assistant", "content": f"Đã cập nhật code: {ai_response['explanation']}"})
+                        
+                        st.session_state.current_explanation = ai_response["explanation"]
+                        st.session_state.current_code = ai_response["code"]
+                        st.rerun()
+            else:
+                # NẾU LÀ YÊU CẦU MỚI HOÀN TOÀN -> GỌI API TẠO MỚI (Logic cũ)
+                full_prompt = prompt
+                meta = []
+                if selected_fields: meta.append(f"Fields: {selected_fields}")
+                if chart_type != "Tự động": meta.append(f"Chart: {chart_type}")
+                if color_scheme != "Tự động": meta.append(f"Color: {color_scheme}")
+                if meta: full_prompt += "\n(Yêu cầu: " + "; ".join(meta) + ")"
+
+                with st.spinner("Đang viết code mới..."):
+                    ai_response = api_client.generate_ai_code(full_prompt)
+                    if ai_response:
+                        st.session_state.is_pending = True
+                        st.session_state.current_prompt = full_prompt
+                        st.session_state.current_code = ai_response["code"]
+                        st.session_state.original_code = ai_response["code"]
+                        st.session_state.current_explanation = ai_response["explanation"]
+                        st.rerun()
