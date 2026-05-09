@@ -149,3 +149,29 @@ def modify_chart_code(current_code: str, user_instruction: str) -> dict:
         return json.loads(raw_text)
     except:
         raise Exception("AI failed to return valid JSON for modification.")
+    
+# --- PROMPTS FOR CHART EXPLANATION (V3 PHASE 3) ---
+EXPLAIN_SYSTEM_PROMPT = """
+Bạn là một chuyên gia phân tích số liệu. Nhiệm vụ của bạn là quan sát hình ảnh biểu đồ được cung cấp và trích xuất các thông tin số liệu nổi bật.
+
+YÊU CẦU:
+1. Tổng quan: Biểu đồ này đang so sánh các biến nào?
+2. Số liệu nổi bật: Chỉ ra giá trị cao nhất, thấp nhất (kèm con số cụ thể nếu thấy trên hình).
+3. Xu hướng: Chỉ ra xu hướng tăng, giảm hoặc tương quan (vd: diện tích tăng thì giá tăng).
+4. QUY TẮC NGHIÊM NGẶT: Chỉ báo cáo số liệu và sự thật khách quan. KHÔNG đưa ra lời khuyên, nhận định chuyên sâu hay đề xuất hành động.
+
+Trả về nội dung dưới dạng Markdown ngắn gọn.
+"""
+
+def explain_chart_vision(image_base64: str) -> str:
+    # Sử dụng model Gemini 1.5 Flash vì có khả năng đọc hình ảnh (Vision)
+    model = genai.GenerativeModel('gemini-3-flash-preview', system_instruction=EXPLAIN_SYSTEM_PROMPT)
+    
+    # Chuẩn bị dữ liệu hình ảnh cho Gemini
+    image_data = {
+        "mime_type": "image/png",
+        "data": image_base64
+    }
+    
+    response = model.generate_content(["Hãy giải thích số liệu của biểu đồ này dựa trên yêu cầu đã nêu.", image_data])
+    return response.text

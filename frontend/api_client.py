@@ -69,3 +69,17 @@ def modify_ai_code(current_code: str, prompt: str):
     except:
         st.error("Lỗi kết nối tới Backend.")
         return None
+    
+def explain_chart_image(image_base64: str):
+    """Gửi hình ảnh biểu đồ tới AI để lấy giải thích số liệu."""
+    try:
+        response = requests.post(
+            f"{BASE_URL}/api/ai/explain", 
+            json={"image_base64": image_base64}
+        )
+        if response.status_code == 200:
+            return response.json()["explanation"]
+        else:
+            return f"Lỗi AI: {response.text}"
+    except:
+        return "Lỗi kết nối tới Backend."

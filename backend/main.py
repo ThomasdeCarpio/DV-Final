@@ -40,6 +40,9 @@ class ModifyRequest(BaseModel):
     current_code: str
     prompt: str
 
+class ExplainRequest(BaseModel):
+    image_base64: str
+
 @app.post("/api/ai/generate")
 async def api_generate(request: GenerateRequest):
     try:
@@ -69,6 +72,15 @@ async def api_execute(request: ExecuteRequest):
     if result["status"] == "error":
         raise HTTPException(status_code=400, detail=result["error"])
     return {"image_base64": result["image"]}
+
+@app.post("/api/ai/explain")
+async def api_explain(request: ExplainRequest):
+    try:
+        from ai_service import explain_chart_vision
+        explanation = explain_chart_vision(request.image_base64)
+        return {"explanation": explanation}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/logs")
 async def api_log(request: LogRequest):
